@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Anomalous Architecture — Audio-Reactive WebGL</title>
+  <meta name="description" content="An immersive audio-reactive 3D experience featuring brutalist, non-Euclidean architectural geometry that transforms in real-time to music and microphone input." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="gl-canvas"></canvas>
+
+  <div id="entry-overlay" class="overlay active">
+    <div class="entry-content">
+      <div class="glitch-title" data-text="ANOMALOUS">ANOMALOUS</div>
+      <div class="subtitle">ARCHITECTURE</div>
+      <p class="descriptor">Brutalist geometry reacts to sound.<br/>Non-Euclidean space reshapes to frequency.</p>
+      <div class="button-group">
+        <button id="btn-mic" class="action-btn primary" aria-label="Enable microphone audio input">
+          <span class="btn-icon">◎</span>
+          <span>ENABLE MIC</span>
+        </button>
+        <button id="btn-file" class="action-btn secondary" aria-label="Upload an audio file">
+          <span class="btn-icon">▶</span>
+          <span>LOAD AUDIO</span>
+        </button>
+      </div>
+      <input type="file" id="audio-file-input" accept="audio/*" style="display:none" aria-label="Audio file picker" />
+      <p class="hint">Click canvas to orbit &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Right-drag to pan</p>
+    </div>
+    <div class="scanline"></div>
+  </div>
+
+  <div id="hud" class="hud hidden">
+    <div class="hud-top">
+      <div class="hud-title">
+        <span class="hud-logo">⬡</span>
+        ANOMALOUS ARCHITECTURE
+      </div>
+      <button id="btn-reset" class="hud-btn" aria-label="Return to start screen" title="Reset">✕</button>
+    </div>
+
+    <div class="freq-bars" aria-label="Frequency visualizer">
+      <div class="freq-band" id="freq-bass">
+        <div class="freq-label">BASS</div>
+        <div class="freq-track"><div class="freq-fill" id="fill-bass"></div></div>
+        <div class="freq-val" id="val-bass">0.00</div>
+      </div>
+      <div class="freq-band" id="freq-mid">
+        <div class="freq-label">MID</div>
+        <div class="freq-track"><div class="freq-fill" id="fill-mid"></div></div>
+        <div class="freq-val" id="val-mid">0.00</div>
+      </div>
+      <div class="freq-band" id="freq-treble">
+        <div class="freq-label">TREBLE</div>
+        <div class="freq-track"><div class="freq-fill" id="fill-treble"></div></div>
+        <div class="freq-val" id="val-treble">0.00</div>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="hud-source" id="audio-source-label">MIC INPUT</div>
+      <div class="hud-fps" id="fps-counter">60 FPS</div>
+    </div>
+  </div>
+
+  <canvas id="post-canvas" aria-hidden="true"></canvas>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
