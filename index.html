@@ -1,82 +1,666 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Anomalous Architecture — Audio-Reactive WebGL</title>
-  <meta name="description" content="An immersive audio-reactive 3D experience featuring brutalist, non-Euclidean architectural geometry that transforms in real-time to music and microphone input." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8" />
+<title>VOID — Audiovisual Show</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+    font-family: 'Space Mono', 'Courier New', monospace;
+  }
+  canvas { display: block; position: fixed; inset: 0; }
+
+  /* ── Landing overlay ──────────────────────────────────────────── */
+  #ui {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    /* Semi-transparent so idle canvas breathes through */
+    background: radial-gradient(ellipse at 50% 50%,
+      rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.88) 100%);
+    transition: opacity 1.2s cubic-bezier(0.4,0,0.2,1);
+  }
+  #ui.fade { opacity: 0; pointer-events: none; }
+
+  /* Subtle grid lines */
+  #ui::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+
+  /* ── Title letters ───────────────────────────────────────────── */
+  .title-wrap {
+    display: flex;
+    gap: 0.04em;
+    margin-bottom: 0.25em;
+    position: relative;
+  }
+  .letter {
+    font-size: clamp(4rem, 14vw, 10rem);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #fff;
+    line-height: 1;
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    text-shadow: 0 0 40px rgba(255,255,255,0.15);
+  }
+  .letter.in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .letter.glitch {
+    animation: ltr-glitch 0.12s steps(1) forwards;
+  }
+  @keyframes ltr-glitch {
+    0%  { clip-path: inset(0 0 60% 0); transform: translateX(-4px); color: #0ff; }
+    33% { clip-path: inset(40% 0 20% 0); transform: translateX(4px);  color: #f0f; }
+    66% { clip-path: inset(20% 0 40% 0); transform: translateX(-2px); color: #ff0; }
+    100%{ clip-path: none; transform: translateX(0); color: #fff; }
+  }
+
+  /* ── Typewriter line ─────────────────────────────────────────── */
+  .type-line {
+    font-size: clamp(0.6rem, 1.5vw, 0.8rem);
+    letter-spacing: 0.22em;
+    color: rgba(255,255,255,0.42);
+    text-transform: uppercase;
+    height: 1.4em;
+    margin-bottom: 3rem;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .type-text { display: inline; }
+  .cursor {
+    display: inline-block;
+    width: 0.55em; height: 1em;
+    background: rgba(255,255,255,0.6);
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: blink 0.9s step-end infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ── Play button ─────────────────────────────────────────────── */
+  .play-wrap {
+    position: relative;
+    width: 88px; height: 88px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .ring-svg {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    animation: spin-ring 3s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes spin-ring {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .ring-svg .arc {
+    fill: none;
+    stroke: rgba(255,255,255,0.6);
+    stroke-width: 1;
+    stroke-dasharray: 180 100;
+    stroke-linecap: round;
+  }
+  .ring-svg .arc2 {
+    fill: none;
+    stroke: rgba(255,255,255,0.2);
+    stroke-width: 1;
+    stroke-dasharray: 60 220;
+    stroke-dashoffset: 100;
+    stroke-linecap: round;
+  }
+  #play {
+    position: relative; z-index: 1;
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.35);
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    font-size: 1.15rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding-left: 3px; /* optical centre for triangle */
+    transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    backdrop-filter: blur(4px);
+    animation: pulse-btn 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse-btn {
+    0%,100% { box-shadow: 0 0 0 0   rgba(255,255,255,0.15); }
+    50%      { box-shadow: 0 0 0 14px rgba(255,255,255,0); }
+  }
+  #play:hover {
+    background: rgba(255,255,255,0.14);
+    border-color: rgba(255,255,255,0.9);
+    box-shadow: 0 0 28px rgba(255,255,255,0.25);
+    animation: none;
+  }
+
+  /* ── Footer meta ─────────────────────────────────────────────── */
+  .meta {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    letter-spacing: 0.25em;
+    color: rgba(255,255,255,0.18);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .meta span { margin: 0 0.8em; }
+</style>
 </head>
 <body>
-  <canvas id="gl-canvas"></canvas>
 
-  <div id="entry-overlay" class="overlay active">
-    <div class="entry-content">
-      <div class="glitch-title" data-text="ANOMALOUS">ANOMALOUS</div>
-      <div class="subtitle">ARCHITECTURE</div>
-      <p class="descriptor">Brutalist geometry reacts to sound.<br/>Non-Euclidean space reshapes to frequency.</p>
-      <div class="button-group">
-        <button id="btn-mic" class="action-btn primary" aria-label="Enable microphone audio input">
-          <span class="btn-icon">◎</span>
-          <span>ENABLE MIC</span>
-        </button>
-        <button id="btn-file" class="action-btn secondary" aria-label="Upload an audio file">
-          <span class="btn-icon">▶</span>
-          <span>LOAD AUDIO</span>
-        </button>
-      </div>
-      <input type="file" id="audio-file-input" accept="audio/*" style="display:none" aria-label="Audio file picker" />
-      <p class="hint">Click canvas to orbit &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Right-drag to pan</p>
-    </div>
-    <div class="scanline"></div>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <!-- Animated title -->
+  <div class="title-wrap" id="title-wrap" aria-label="VOID"></div>
+
+  <!-- Typewriter -->
+  <div class="type-line">
+    <span class="type-text" id="type-text"></span><span class="cursor"></span>
   </div>
 
-  <div id="hud" class="hud hidden">
-    <div class="hud-top">
-      <div class="hud-title">
-        <span class="hud-logo">⬡</span>
-        ANOMALOUS ARCHITECTURE
-      </div>
-      <button id="btn-reset" class="hud-btn" aria-label="Return to start screen" title="Reset">✕</button>
-    </div>
-
-    <div class="freq-bars" aria-label="Frequency visualizer">
-      <div class="freq-band" id="freq-bass">
-        <div class="freq-label">BASS</div>
-        <div class="freq-track"><div class="freq-fill" id="fill-bass"></div></div>
-        <div class="freq-val" id="val-bass">0.00</div>
-      </div>
-      <div class="freq-band" id="freq-mid">
-        <div class="freq-label">MID</div>
-        <div class="freq-track"><div class="freq-fill" id="fill-mid"></div></div>
-        <div class="freq-val" id="val-mid">0.00</div>
-      </div>
-      <div class="freq-band" id="freq-treble">
-        <div class="freq-label">TREBLE</div>
-        <div class="freq-track"><div class="freq-fill" id="fill-treble"></div></div>
-        <div class="freq-val" id="val-treble">0.00</div>
-      </div>
-    </div>
-
-    <div class="hud-bottom">
-      <div class="hud-source" id="audio-source-label">MIC INPUT</div>
-      <div class="hud-fps" id="fps-counter">60 FPS</div>
-    </div>
+  <!-- Play button with orbital ring -->
+  <div class="play-wrap">
+    <svg class="ring-svg" viewBox="0 0 88 88">
+      <circle class="arc"  cx="44" cy="44" r="42" />
+      <circle class="arc2" cx="44" cy="44" r="42" />
+    </svg>
+    <button id="play" aria-label="Play audiovisual show">&#9654;</button>
   </div>
 
-  <canvas id="post-canvas" aria-hidden="true"></canvas>
+  <!-- Footer -->
+  <p class="meta">
+    <span>128 BPM</span>
+    <span>·</span>
+    <span>Web Audio API</span>
+    <span>·</span>
+    <span>Canvas 2D</span>
+    <span>·</span>
+    <span>No plugins</span>
+  </p>
+</div>
 
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
-      }
+<script>
+/* ================================================================
+   VOID — Audiovisual Show
+   Everything generated by code: audio synthesis + canvas visuals.
+   ================================================================ */
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const ui     = document.getElementById('ui');
+let W, H;
+
+function resize() {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+/* ── 1. AUDIO SYNTHESIS ───────────────────────────────────────── */
+
+let AC, analyser, freqData, waveData;
+let bpm = 128;
+let beat = 0;      // beat counter
+let t16  = 0;      // 16th-note counter (0–15)
+let nextBeatTime = 0;
+let scheduleAheadTime = 0.1;
+let lookaheadInterval = 25; // ms
+
+// Smoothed analysis bands
+let sBass = 0, sMid = 0, sTreble = 0;
+
+function initAudio() {
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+
+  analyser = AC.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.8;
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+  waveData = new Uint8Array(analyser.fftSize);
+  analyser.connect(AC.destination);
+
+  nextBeatTime = AC.currentTime + 0.05;
+  setInterval(scheduler, lookaheadInterval);
+}
+
+/* ── Envelope helper ──────────────────────────────────────────── */
+function env(gainNode, time, attack, decay, sustain, release) {
+  const g = gainNode.gain;
+  g.cancelScheduledValues(time);
+  g.setValueAtTime(0, time);
+  g.linearRampToValueAtTime(1,       time + attack);
+  g.linearRampToValueAtTime(sustain, time + attack + decay);
+  g.linearRampToValueAtTime(0,       time + attack + decay + release);
+}
+
+/* ── Kick drum ────────────────────────────────────────────────── */
+function kick(time) {
+  const osc = AC.createOscillator();
+  const g   = AC.createGain();
+  osc.connect(g); g.connect(analyser);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(160, time);
+  osc.frequency.exponentialRampToValueAtTime(40, time + 0.06);
+  g.gain.setValueAtTime(0, time);
+  g.gain.linearRampToValueAtTime(1.8, time + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+  osc.start(time); osc.stop(time + 0.3);
+}
+
+/* ── Snare ────────────────────────────────────────────────────── */
+function snare(time) {
+  // Body
+  const osc = AC.createOscillator();
+  const og  = AC.createGain();
+  osc.connect(og); og.connect(analyser);
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(200, time);
+  og.gain.setValueAtTime(0.6, time);
+  og.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+  osc.start(time); osc.stop(time + 0.15);
+  // Noise
+  const buf    = AC.createBuffer(1, AC.sampleRate * 0.15, AC.sampleRate);
+  const data   = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const noise  = AC.createBufferSource();
+  const filter = AC.createBiquadFilter();
+  const ng     = AC.createGain();
+  noise.buffer = buf;
+  filter.type  = 'highpass'; filter.frequency.value = 1200;
+  noise.connect(filter); filter.connect(ng); ng.connect(analyser);
+  ng.gain.setValueAtTime(0.9, time);
+  ng.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
+  noise.start(time); noise.stop(time + 0.15);
+}
+
+/* ── Hi-hat ───────────────────────────────────────────────────── */
+function hihat(time, open = false) {
+  const buf  = AC.createBuffer(1, AC.sampleRate * 0.15, AC.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const noise  = AC.createBufferSource();
+  const filter = AC.createBiquadFilter();
+  const g      = AC.createGain();
+  noise.buffer = buf;
+  filter.type  = 'bandpass'; filter.frequency.value = 8000; filter.Q.value = 0.5;
+  noise.connect(filter); filter.connect(g); g.connect(analyser);
+  const decay = open ? 0.25 : 0.05;
+  g.gain.setValueAtTime(0.35, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time + decay);
+  noise.start(time); noise.stop(time + decay + 0.01);
+}
+
+/* ── Bass synth ───────────────────────────────────────────────── */
+const bassNotes = [55, 55, 55, 73.4, 55, 55, 82.4, 55]; // A1, D2, E2
+function bass(time, noteIdx) {
+  const freq = bassNotes[noteIdx % bassNotes.length];
+  const osc  = AC.createOscillator();
+  const g    = AC.createGain();
+  const f    = AC.createBiquadFilter();
+  osc.connect(f); f.connect(g); g.connect(analyser);
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(freq, time);
+  f.type = 'lowpass'; f.frequency.setValueAtTime(800, time);
+  f.frequency.exponentialRampToValueAtTime(200, time + 0.1);
+  env(g, time, 0.005, 0.05, 0.5, 0.15);
+  osc.start(time); osc.stop(time + 0.35);
+}
+
+/* ── Melodic arp ──────────────────────────────────────────────── */
+const arpNotes = [220, 277.2, 329.6, 440, 369.9, 293.7, 246.9, 196];
+let   arpIdx   = 0;
+function arp(time) {
+  const freq = arpNotes[arpIdx % arpNotes.length];
+  arpIdx++;
+  const osc = AC.createOscillator();
+  const g   = AC.createGain();
+  const rev = AC.createConvolver();
+  // simple reverb via buffer
+  const rvBuf = AC.createBuffer(2, AC.sampleRate * 1.5, AC.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = rvBuf.getChannelData(ch);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+  }
+  rev.buffer = rvBuf;
+  osc.connect(g); g.connect(rev); rev.connect(analyser); g.connect(analyser);
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq, time);
+  env(g, time, 0.01, 0.05, 0.3, 0.3);
+  osc.start(time); osc.stop(time + 0.5);
+}
+
+/* ── Sequencer ────────────────────────────────────────────────── */
+// 16-step pattern (4/4, 16th notes)
+//  k=kick  s=snare  h=hihat  H=open-hat  a=arp  b=bass
+const pattern = [
+  'k h b',  // 1
+  '  h  ',  // 2
+  '  H a',  // 3
+  '  h  ',  // 4
+  'k h b',  // 5
+  '  h a',  // 6
+  '  h  ',  // 7
+  '  H a',  // 8
+  'k h b',  // 9
+  '  h  ',  // 10
+  'k H a',  // 11
+  '  h  ',  // 12
+  'ks h b', // 13
+  '  h a',  // 14
+  'k h  ',  // 15
+  'ks H a', // 16
+];
+
+function scheduler() {
+  if (!AC) return;
+  const secPerBeat    = 60 / bpm;
+  const secPer16th    = secPerBeat / 4;
+  while (nextBeatTime < AC.currentTime + scheduleAheadTime) {
+    const step = t16 % 16;
+    const p    = pattern[step];
+    if (p.includes('k')) kick(nextBeatTime);
+    if (p.includes('s')) snare(nextBeatTime);
+    if (p.includes('H')) hihat(nextBeatTime, true);
+    else if (p.includes('h')) hihat(nextBeatTime, false);
+    if (p.includes('b')) bass(nextBeatTime, Math.floor(t16 / 2));
+    if (p.includes('a')) arp(nextBeatTime);
+    nextBeatTime += secPer16th;
+    t16++;
+    if (t16 % 4 === 0) beat++;
+  }
+}
+
+/* ── Analysis ─────────────────────────────────────────────────── */
+function analyse() {
+  if (!analyser) return;
+  analyser.getByteFrequencyData(freqData);
+  analyser.getByteTimeDomainData(waveData);
+  const bins = freqData.length;
+  // bass: 0–5%, mid: 5–40%, treble: 40–100% of bins
+  let rawB = 0, rawM = 0, rawT = 0;
+  const bEnd = Math.floor(bins * 0.05);
+  const mEnd = Math.floor(bins * 0.40);
+  for (let i = 0; i < bEnd; i++) rawB += freqData[i];
+  for (let i = bEnd; i < mEnd; i++) rawM += freqData[i];
+  for (let i = mEnd; i < bins; i++) rawT += freqData[i];
+  rawB /= (bEnd * 255);
+  rawM /= ((mEnd - bEnd) * 255);
+  rawT /= ((bins - mEnd) * 255);
+  const L = 0.18;
+  sBass   += (rawB - sBass)   * L;
+  sMid    += (rawM - sMid)    * L;
+  sTreble += (rawT - sTreble) * L;
+}
+
+/* ── 2. VISUALS ───────────────────────────────────────────────── */
+
+let time = 0;
+const TWO_PI = Math.PI * 2;
+
+// Particle system
+const PARTICLES = 280;
+const particles = Array.from({ length: PARTICLES }, () => ({
+  x: Math.random() * 2 - 1,  // normalised -1..1
+  y: Math.random() * 2 - 1,
+  vx: (Math.random() - 0.5) * 0.003,
+  vy: (Math.random() - 0.5) * 0.003,
+  size: Math.random() * 2 + 0.5,
+  hue: Math.random() * 360,
+  life: Math.random(),
+}));
+
+function drawFrame() {
+  analyse();
+
+  const cx = W / 2, cy = H / 2;
+  const radius = Math.min(W, H) * 0.28;
+
+  // ── Background: slow fade (motion trail) ──────────────────────
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.22 + sBass * 0.18})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Global hue shifts ─────────────────────────────────────────
+  const baseHue  = (time * 18) % 360;
+  const bassHue  = (baseHue + sBass * 80)  % 360;
+  const midHue   = (baseHue + 120 + sMid * 60)  % 360;
+  const trebleHue= (baseHue + 240 + sTreble * 40) % 360;
+
+  // ── 1. WAVEFORM — oscilloscope ring ──────────────────────────
+  if (waveData) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.beginPath();
+    const wLen = waveData.length;
+    for (let i = 0; i < wLen; i++) {
+      const angle  = (i / wLen) * TWO_PI - Math.PI / 2;
+      const sample = (waveData[i] / 128 - 1);           // -1..1
+      const r      = radius + sample * (40 + sBass * 80);
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
-  </script>
-  <script type="module" src="main.js"></script>
+    ctx.closePath();
+    ctx.strokeStyle = `hsla(${bassHue}, 100%, 70%, 0.85)`;
+    ctx.lineWidth   = 1.5 + sBass * 2.5;
+    ctx.shadowColor = `hsla(${bassHue}, 100%, 60%, 0.9)`;
+    ctx.shadowBlur  = 12 + sBass * 30;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── 2. FREQUENCY BARS — radial ────────────────────────────────
+  if (freqData) {
+    const numBars = 128;
+    ctx.save();
+    ctx.translate(cx, cy);
+    for (let i = 0; i < numBars; i++) {
+      const angle  = (i / numBars) * TWO_PI - Math.PI / 2;
+      const val    = freqData[Math.floor(i * freqData.length / numBars)] / 255;
+      const inner  = radius * 0.78;
+      const outer  = inner + val * (radius * 0.9 + sBass * 60);
+      const hue    = (bassHue + i * 2.5) % 360;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+      ctx.strokeStyle = `hsla(${hue}, 90%, 65%, ${0.55 + val * 0.45})`;
+      ctx.lineWidth   = 1.8;
+      ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.5)`;
+      ctx.shadowBlur  = 6 + val * 12;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ── 3. PARTICLES ──────────────────────────────────────────────
+  for (const p of particles) {
+    // Bass repels outward from centre
+    const px = p.x * cx + cx, py = p.y * cy + cy;
+    const dx = p.x, dy = p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+    p.vx += (dx / dist) * sBass * 0.006;
+    p.vy += (dy / dist) * sBass * 0.006;
+    // Mid creates a slow whirl
+    p.vx += -p.y * sMid * 0.003;
+    p.vy +=  p.x * sMid * 0.003;
+    // Damping
+    p.vx *= 0.985;
+    p.vy *= 0.985;
+    // Update
+    p.x  += p.vx;
+    p.y  += p.vy;
+    // Wrap
+    if (Math.abs(p.x) > 1.2) p.x *= -0.9;
+    if (Math.abs(p.y) > 1.2) p.y *= -0.9;
+
+    const hue = (p.hue + time * 40 + sBass * 120) % 360;
+    const alpha = 0.4 + sTreble * 0.5;
+    ctx.beginPath();
+    ctx.arc(px, py, p.size + sBass * 2, 0, TWO_PI);
+    ctx.fillStyle   = `hsla(${hue}, 80%, 65%, ${alpha})`;
+    ctx.shadowColor = `hsla(${hue}, 100%, 70%, 0.6)`;
+    ctx.shadowBlur  = 8 + sBass * 15;
+    ctx.fill();
+  }
+
+  // ── 4. CENTRE PULSE ───────────────────────────────────────────
+  const pulseR = radius * 0.22 + sBass * radius * 0.55;
+  const grad   = ctx.createRadialGradient(cx, cy, 0, cx, cy, pulseR);
+  grad.addColorStop(0,   `hsla(${bassHue}, 100%, 90%, ${0.25 + sBass * 0.55})`);
+  grad.addColorStop(0.5, `hsla(${midHue},  100%, 60%, ${0.1 + sMid * 0.25})`);
+  grad.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, pulseR, 0, TWO_PI);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // ── 5. ROTATING POLYGON (mid-driven) ─────────────────────────
+  const sides = 6;
+  const polyR  = radius * (0.55 + sMid * 0.3);
+  const rot    = time * (0.15 + sMid * 0.6);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  for (let i = 0; i <= sides; i++) {
+    const a = (i / sides) * TWO_PI;
+    const r = polyR * (1 + sTreble * 0.15 * Math.sin(time * 8 + i * 2));
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = `hsla(${midHue}, 90%, 65%, ${0.3 + sMid * 0.5})`;
+  ctx.lineWidth   = 1 + sMid * 2;
+  ctx.shadowColor = `hsla(${midHue}, 100%, 70%, 0.7)`;
+  ctx.shadowBlur  = 10 + sMid * 40;
+  ctx.stroke();
+  ctx.restore();
+
+  // ── 6. TREBLE SPARKS ─────────────────────────────────────────
+  if (sTreble > 0.12) {
+    const sparkCount = Math.floor(sTreble * 18);
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * TWO_PI;
+      const r1    = radius * (0.3 + Math.random() * 0.9);
+      const r2    = r1 + 6 + Math.random() * 30 * sTreble;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1);
+      ctx.lineTo(cx + Math.cos(angle) * r2, cy + Math.sin(angle) * r2);
+      ctx.strokeStyle = `hsla(${trebleHue}, 100%, 90%, ${0.4 + Math.random() * 0.5})`;
+      ctx.lineWidth   = 0.8;
+      ctx.shadowColor = `hsla(${trebleHue}, 100%, 80%, 0.8)`;
+      ctx.shadowBlur  = 6;
+      ctx.stroke();
+    }
+  }
+
+  // ── 7. BPM FLASH (on every beat) ─────────────────────────────
+  const secPerBeat = 60 / bpm;
+  const beatPhase  = AC ? ((AC.currentTime % secPerBeat) / secPerBeat) : 0;
+  const flash      = Math.pow(1 - beatPhase, 6) * 0.12;
+  if (flash > 0.005) {
+    ctx.fillStyle = `rgba(255,255,255,${flash})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  time += 1 / 60;
+  requestAnimationFrame(drawFrame);
+}
+
+/* ── 3. LANDING PAGE ANIMATIONS ──────────────────────────────── */
+
+// Build letter spans for "VOID"
+const titleWrap  = document.getElementById('title-wrap');
+const typeEl     = document.getElementById('type-text');
+const WORD       = 'VOID';
+const letterEls  = [];
+
+WORD.split('').forEach((ch, i) => {
+  const span = document.createElement('span');
+  span.className = 'letter';
+  span.textContent = ch;
+  titleWrap.appendChild(span);
+  letterEls.push(span);
+  // Staggered drop-in
+  setTimeout(() => span.classList.add('in'), 200 + i * 120);
+});
+
+// Periodic glitch on a random letter
+setInterval(() => {
+  const el = letterEls[Math.floor(Math.random() * letterEls.length)];
+  el.classList.remove('glitch');
+  void el.offsetWidth; // reflow to restart animation
+  el.classList.add('glitch');
+  setTimeout(() => el.classList.remove('glitch'), 200);
+}, 2800);
+
+// Typewriter cycling phrases
+const phrases = [
+  'an audiovisual show',
+  'made entirely with code',
+  '128 bpm, synthesised live',
+  'no samples. no plugins.',
+  'web audio api + canvas 2d',
+  'press play to begin',
+];
+let phraseIdx = 0, charIdx = 0, deleting = false;
+
+function typeStep() {
+  const phrase = phrases[phraseIdx];
+  if (!deleting) {
+    charIdx++;
+    typeEl.textContent = phrase.slice(0, charIdx);
+    if (charIdx === phrase.length) {
+      deleting = true;
+      setTimeout(typeStep, 2000);  // pause at full phrase
+      return;
+    }
+    setTimeout(typeStep, 55 + Math.random() * 30);
+  } else {
+    charIdx--;
+    typeEl.textContent = phrase.slice(0, charIdx);
+    if (charIdx === 0) {
+      deleting  = false;
+      phraseIdx = (phraseIdx + 1) % phrases.length;
+      setTimeout(typeStep, 350);
+      return;
+    }
+    setTimeout(typeStep, 28);
+  }
+}
+setTimeout(typeStep, 1000);
+
+// Play button
+document.getElementById('play').addEventListener('click', () => {
+  initAudio();
+  ui.classList.add('fade');
+  setTimeout(() => ui.style.display = 'none', 1200);
+});
+
+// Start render loop immediately (idle mode, no audio)
+drawFrame();
+</script>
 </body>
 </html>
