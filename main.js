@@ -1,172 +1,144 @@
+// d:\izzy\H_C\Void\main.js
 import { AudioEngine } from './audio.js';
-import { Scene }       from './scene.js';
+import { Scene } from './scene.js';
 import { BytebeatEngine } from './audioBytebeat.js';
 
-const canvas       = document.getElementById('gl-canvas');
+const canvas = document.getElementById('c');
 const entryOverlay = document.getElementById('entry-overlay');
-const hud          = document.getElementById('hud');
+const hud = document.getElementById('hud');
 
-const btnMic       = document.getElementById('btn-mic');
-const btnFile      = document.getElementById('btn-file');
-const fileInput    = document.getElementById('audio-file-input');
-const btnReset     = document.getElementById('btn-reset');
+const btnMic = document.getElementById('btn-mic');
+const btnFile = document.getElementById('btn-file');
+const fileInput = document.getElementById('audio-file-input');
+const btnReset = document.getElementById('btn-reset');
 
-const fillBass     = document.getElementById('fill-bass');
-const fillMid      = document.getElementById('fill-mid');
-const fillTreble   = document.getElementById('fill-treble');
-const valBass      = document.getElementById('val-bass');
-const valMid       = document.getElementById('val-mid');
-const valTreble    = document.getElementById('val-treble');
-const fpsCounter   = document.getElementById('fps-counter');
-const sourceLabel  = document.getElementById('audio-source-label');
+const fillBass = document.getElementById('fill-bass');
+const fillMid = document.getElementById('fill-mid');
+const fillTreble = document.getElementById('fill-treble');
+const valBass = document.getElementById('val-bass');
+const valMid = document.getElementById('val-mid');
+const valTreble = document.getElementById('val-treble');
+const fpsCounter = document.getElementById('fps-counter');
+const sourceLabel = document.getElementById('audio-source-label');
 
-let audio  = null;
-let scene  = null;
+let audio = null;
+let scene = null;
 let running = false;
 
 // Demo phases
-const Phase = {
-  INTRO:   'intro',
-  RUNNING: 'running',
-  OUTRO:   'outro',
-};
+const Phase = { INTRO: 'intro', RUNNING: 'running', OUTRO: 'outro' };
 let phase = Phase.INTRO;
+window.phase = phase; // expose for scene
 
 let frameCount = 0;
 let lastFpsTime = performance.now();
 
-
 function bootstrap() {
-  // Scene is created once and lives for the full page session
   scene = new Scene(canvas);
-  // Run idle animation (no audio) so the entry screen has a live background
   requestAnimationFrame(idleLoop);
 }
 
 /* ── Idle render loop (entry screen) ─────────────────────────── */
-
 function idleLoop() {
-  if (running) return;           // hand off to audioLoop once started
-  scene.update(null);            // pass null → audio values default to 0
+  if (running) return;
+  scene.update(null);
   requestAnimationFrame(idleLoop);
 }
 
 /* ── Audio render loop ────────────────────────────────────────── */
-
 function audioLoop() {
-  if (!running) return;
-
+  if (!running || !audio) return;
   audio.update();
   scene.update(audio);
   updateHUD();
-
   requestAnimationFrame(audioLoop);
 }
 
 /* ── HUD update ───────────────────────────────────────────────── */
-
 function updateHUD() {
-  const b = audio.bass;
-  const m = audio.mid;
-  const t = audio.treble;
+  const b = audio?.bass ?? 0;
+  const m = audio?.mid ?? 0;
+  const t = audio?.treble ?? 0;
 
-  fillBass.style.width   = `${(b * 100).toFixed(1)}%`;
-  fillMid.style.width    = `${(m * 100).toFixed(1)}%`;
+  fillBass.style.width = `${(b * 100).toFixed(1)}%`;
+  fillMid.style.width = `${(m * 100).toFixed(1)}%`;
   fillTreble.style.width = `${(t * 100).toFixed(1)}%`;
 
-  valBass.textContent   = b.toFixed(2);
-  valMid.textContent    = m.toFixed(2);
+  valBass.textContent = b.toFixed(2);
+  valMid.textContent = m.toFixed(2);
   valTreble.textContent = t.toFixed(2);
 
-  // FPS
   frameCount++;
   const now = performance.now();
   if (now - lastFpsTime >= 500) {
     const fps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
     fpsCounter.textContent = `${fps} FPS`;
-    frameCount  = 0;
+    frameCount = 0;
     lastFpsTime = now;
   }
 }
 
-/* ── Transition: entry → experience ──────────────────────────── */
-
 function startExperience(label) {
   sourceLabel.textContent = label;
-
-  // Fade out overlay
   entryOverlay.classList.remove('active');
   setTimeout(() => {
     entryOverlay.style.display = 'none';
   }, 700);
-
-  // Show HUD
   hud.classList.remove('hidden');
-
   running = true;
   requestAnimationFrame(audioLoop);
-
-  // If we are in the running phase, schedule the outro (30 s demo)
+  // schedule outro (30 s)
   if (phase === Phase.RUNNING) {
     scheduleOutro(30000);
   }
 }
 
-}
-
-/* ── Transition: experience → entry ──────────────────────────── */
-
 function resetExperience() {
   running = false;
   if (audio) audio.suspend();
-
   hud.classList.add('hidden');
   entryOverlay.style.display = '';
   setTimeout(() => entryOverlay.classList.add('active'), 20);
-
-  // Restart idle loop
   requestAnimationFrame(idleLoop);
 }
 
-// Schedule outro after given duration (ms)
 function scheduleOutro(durationMs) {
   setTimeout(() => {
-    // Fade‑in overlay for outro
     entryOverlay.classList.add('active');
     hud.classList.add('hidden');
     running = false;
     phase = Phase.OUTRO;
+    window.phase = phase;
+    // stop the generated audio if possible
+    if (audio && typeof audio.stop === 'function') audio.stop();
   }, durationMs);
 }
 
-// Kick off the intro when page loads
 function startDemo() {
-  // Show overlay (already visible) then fade after a short delay
   entryOverlay.classList.add('active');
   setTimeout(() => {
     phase = Phase.RUNNING;
+    window.phase = phase;
     startExperience('CODE‑GEN MUSIC');
   }, 3000);
 }
 
-  running = false;
-  if (audio) audio.suspend();
-
-  hud.classList.add('hidden');
-  entryOverlay.style.display = '';
-  setTimeout(() => entryOverlay.classList.add('active'), 20);
-
-  // Restart idle loop
-  requestAnimationFrame(idleLoop);
+// Play button (overlay)
+const playBtn = document.getElementById('play');
+if (playBtn) {
+  playBtn.addEventListener('click', () => {
+    entryOverlay.classList.add('fade');
+    setTimeout(() => {
+      entryOverlay.style.display = 'none';
+      startDemo();
+    }, 500);
+  });
 }
-
-/* ── Button handlers ──────────────────────────────────────────── */
 
 btnMic.addEventListener('click', async () => {
   try {
     btnMic.disabled = true;
     btnMic.querySelector('span:last-child').textContent = 'CONNECTING…';
-
     audio = new AudioEngine();
     await audio.startMic();
     startExperience('MIC INPUT');
@@ -179,7 +151,6 @@ btnMic.addEventListener('click', async () => {
 });
 
 btnFile.addEventListener('click', () => {
-  // Directly start the code‑generated demo (ignores file selection)
   audio = new BytebeatEngine();
   audio.start();
   startDemo();
@@ -196,18 +167,15 @@ fileInput.addEventListener('change', async (e) => {
     console.error('File audio error:', err);
     alert(`Could not decode audio file: ${err.message}`);
   }
-  // Reset input so same file can be picked again
   fileInput.value = '';
 });
 
 btnReset.addEventListener('click', resetExperience);
 
-/* ── Page visibility (pause on tab switch) ────────────────────── */
-
 document.addEventListener('visibilitychange', () => {
   if (!audio) return;
   if (document.hidden) audio.suspend();
-  else                  audio.resume();
+  else audio.resume();
 });
 
 bootstrap();
