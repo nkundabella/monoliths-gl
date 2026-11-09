@@ -1,5 +1,6 @@
 import { AudioEngine } from './audio.js';
 import { Scene }       from './scene.js';
+import { BytebeatEngine } from './audioBytebeat.js';
 
 const canvas       = document.getElementById('gl-canvas');
 const entryOverlay = document.getElementById('entry-overlay');
@@ -23,8 +24,17 @@ let audio  = null;
 let scene  = null;
 let running = false;
 
+// Demo phases
+const Phase = {
+  INTRO:   'intro',
+  RUNNING: 'running',
+  OUTRO:   'outro',
+};
+let phase = Phase.INTRO;
+
 let frameCount = 0;
 let lastFpsTime = performance.now();
+
 
 function bootstrap() {
   // Scene is created once and lives for the full page session
@@ -95,11 +105,50 @@ function startExperience(label) {
 
   running = true;
   requestAnimationFrame(audioLoop);
+
+  // If we are in the running phase, schedule the outro (30 s demo)
+  if (phase === Phase.RUNNING) {
+    scheduleOutro(30000);
+  }
+}
+
 }
 
 /* ── Transition: experience → entry ──────────────────────────── */
 
 function resetExperience() {
+  running = false;
+  if (audio) audio.suspend();
+
+  hud.classList.add('hidden');
+  entryOverlay.style.display = '';
+  setTimeout(() => entryOverlay.classList.add('active'), 20);
+
+  // Restart idle loop
+  requestAnimationFrame(idleLoop);
+}
+
+// Schedule outro after given duration (ms)
+function scheduleOutro(durationMs) {
+  setTimeout(() => {
+    // Fade‑in overlay for outro
+    entryOverlay.classList.add('active');
+    hud.classList.add('hidden');
+    running = false;
+    phase = Phase.OUTRO;
+  }, durationMs);
+}
+
+// Kick off the intro when page loads
+function startDemo() {
+  // Show overlay (already visible) then fade after a short delay
+  entryOverlay.classList.add('active');
+  setTimeout(() => {
+    phase = Phase.RUNNING;
+    startExperience('CODE‑GEN MUSIC');
+  }, 3000);
+}
+
   running = false;
   if (audio) audio.suspend();
 
@@ -130,7 +179,10 @@ btnMic.addEventListener('click', async () => {
 });
 
 btnFile.addEventListener('click', () => {
-  fileInput.click();
+  // Directly start the code‑generated demo (ignores file selection)
+  audio = new BytebeatEngine();
+  audio.start();
+  startDemo();
 });
 
 fileInput.addEventListener('change', async (e) => {
