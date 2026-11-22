@@ -349,42 +349,99 @@ function arp(time) {
   osc.start(time); osc.stop(time + 0.5);
 }
 
-/* ── sequencer ───────────────────────────────────────────────────
-   16-step pattern at 128 BPM. the scheduler runs on its own setInterval
-   with a 100 ms lookahead — keeps notes in sync regardless of frame rate. */
-// k=kick  s=snare  h=closed hat  H=open hat  b=bass  a=arp
-const pattern = [
-  'k h b',  // 1
-  '  h  ',  // 2
-  '  H a',  // 3
-  '  h  ',  // 4
-  'k h b',  // 5
-  '  h a',  // 6
-  '  h  ',  // 7
-  '  H a',  // 8
-  'k h b',  // 9
-  '  h  ',  // 10
-  'k H a',  // 11
-  '  h  ',  // 12
-  'ks h b', // 13
-  '  h a',  // 14
-  'k h  ',  // 15
-  'ks H a', // 16
+/* ── sequencer & song structure ──────────────────────────────────
+   128 BPM, 4/4 time. 16 steps per bar (16th notes).
+   We structure the show into distinct musical sections over ~32 seconds:
+   - Bar 0..3:  Intro buildup (kick + bass + closed hats)
+   - Bar 4..11: Full groove (kick, snare, hats, evolving arp chords)
+   - Bar 12..14: Peak breakdown (rapid open hats + soaring lead octaves)
+   - Bar 15+:   Outro fade (kick drops, reverbed arp trails out)
+   The audio scheduler runs ahead by 100ms via setInterval to prevent drift. */
+// k=kick  s=snare  h=closed hat  H=open hat  b=bass  a=arp  c=chord
+const patternA = [
+  'k h b',   // 1
+  '  h  ',   // 2
+  '  H a',   // 3
+  '  h  ',   // 4
+  'k h b',   // 5
+  '  h a',   // 6
+  '  h  ',   // 7
+  '  H a',   // 8
+  'k h b',   // 9
+  '  h  ',   // 10
+  'k H a',   // 11
+  '  h  ',   // 12
+  'ks h b',  // 13
+  '  h a',   // 14
+  'k h  ',   // 15
+  'ks H a',  // 16
 ];
 
+// Variation pattern with syncopated snare and open hat roll
+const patternB = [
+  'k h b',
+  '  h a',
+  's H  ',
+  '  h a',
+  'k h b',
+  's h  ',
+  '  H a',
+  's h b',
+  'k h  ',
+  '  H a',
+  'k s b',
+  '  h a',
+  'ks h b',
+  '  H a',
+  's h b',
+  'ks H a',
+];
+
+let showDurationBars = 16;
+let showEnded = false;
+
 function scheduler() {
-  if (!AC) return;
-  const secPerBeat    = 60 / bpm;
-  const secPer16th    = secPerBeat / 4;
+  if (!AC || showEnded) return;
+  const secPerBeat = 60 / bpm;
+  const secPer16th = secPerBeat / 4;
+
   while (nextBeatTime < AC.currentTime + scheduleAheadTime) {
-    const step = t16 % 16;
-    const p    = pattern[step];
-    if (p.includes('k')) kick(nextBeatTime);
-    if (p.includes('s')) snare(nextBeatTime);
-    if (p.includes('H')) hihat(nextBeatTime, true);
-    else if (p.includes('h')) hihat(nextBeatTime, false);
-    if (p.includes('b')) bass(nextBeatTime, Math.floor(t16 / 2));
-    if (p.includes('a')) arp(nextBeatTime);
+    const curBar = Math.floor(t16 / 16);
+    const step   = t16 % 16;
+
+    // After 16 bars (~30-32s), trigger the end of the show
+    if (curBar >= showDurationBars) {
+      showEnded = true;
+      setTimeout(() => {
+        ui.style.display = 'flex';
+        void ui.offsetWidth;
+        ui.classList.remove('fade');
+      }, 1500);
+      break;
+    }
+
+    // Pick active pattern based on progression
+    const p = (curBar >= 4 && curBar % 2 === 1) ? patternB[step] : patternA[step];
+
+    // Progressive layering
+    const allowDrums = curBar < 15;
+    const allowKick  = curBar < 14;
+
+    if (allowDrums) {
+      if (p.includes('k') && allowKick) kick(nextBeatTime);
+      if (p.includes('s') && curBar >= 2) snare(nextBeatTime);
+      if (p.includes('H')) hihat(nextBeatTime, true);
+      else if (p.includes('h')) hihat(nextBeatTime, false);
+    }
+
+    if (p.includes('b') && curBar < 15) {
+      bass(nextBeatTime, Math.floor(t16 / 2) + Math.floor(curBar / 2));
+    }
+
+    if (p.includes('a') && curBar >= 1) {
+      arp(nextBeatTime);
+    }
+
     nextBeatTime += secPer16th;
     t16++;
     if (t16 % 4 === 0) beat++;
@@ -580,6 +637,50 @@ function drawFrame() {
     }
   }
 
+  // ── 8. TUNNEL EFFECT & HARMONIC LISSAJOUS CORE ────────────────
+  // Adds depth and retro wireframe demoscene layering in the background
+  ctx.save();
+  ctx.translate(cx, cy);
+  const tunnelRings = 7;
+  for (let ring = 1; ring <= tunnelRings; ring++) {
+    const ringScale = (ring / tunnelRings);
+    const ringR = radius * (1.3 + ringScale * 1.8) + sBass * 40;
+    const ringAlpha = (1 - ringScale) * (0.12 + sBass * 0.18);
+    const ringRot = time * (0.1 - ring * 0.02) + (ring % 2 === 0 ? sMid * 0.5 : -sMid * 0.5);
+
+    ctx.save();
+    ctx.rotate(ringRot);
+    ctx.beginPath();
+    const ringSides = 8;
+    for (let s = 0; s <= ringSides; s++) {
+      const theta = (s / ringSides) * TWO_PI;
+      const rx = Math.cos(theta) * ringR;
+      const ry = Math.sin(theta) * ringR;
+      s === 0 ? ctx.moveTo(rx, ry) : ctx.lineTo(rx, ry);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = `hsla(${(bassHue + ring * 25) % 360}, 85%, 65%, ${ringAlpha})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Lissajous audio-reactive core figure inside the centre pulse
+  ctx.beginPath();
+  const lissPoints = 80;
+  for (let i = 0; i <= lissPoints; i++) {
+    const phi = (i / lissPoints) * TWO_PI;
+    const lx = Math.sin(phi * 3 + time * 2) * (radius * 0.35 + sMid * 30);
+    const ly = Math.sin(phi * 2 + time * 1.5) * (radius * 0.35 + sTreble * 30);
+    i === 0 ? ctx.moveTo(lx, ly) : ctx.lineTo(lx, ly);
+  }
+  ctx.strokeStyle = `hsla(${trebleHue}, 100%, 80%, ${0.4 + sTreble * 0.5})`;
+  ctx.lineWidth = 1.2;
+  ctx.shadowColor = `hsla(${trebleHue}, 100%, 75%, 0.8)`;
+  ctx.shadowBlur = 8;
+  ctx.stroke();
+  ctx.restore();
+
   // white screen flash locked to the BPM — pow() curve makes it snappy
   const secPerBeat = 60 / bpm;
   const beatPhase  = AC ? ((AC.currentTime % secPerBeat) / secPerBeat) : 0;
@@ -658,7 +759,18 @@ setTimeout(typeStep, 1000);
 
 // Play button
 document.getElementById('play').addEventListener('click', () => {
-  initAudio();
+  if (showEnded) {
+    // Reset state if replaying
+    showEnded = false;
+    t16 = 0;
+    beat = 0;
+    if (AC) nextBeatTime = AC.currentTime + 0.05;
+  }
+  if (!AC) {
+    initAudio();
+  } else if (AC.state === 'suspended') {
+    AC.resume();
+  }
   ui.classList.add('fade');
   setTimeout(() => ui.style.display = 'none', 1200);
 });
