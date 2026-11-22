@@ -1,266 +1,179 @@
+// scene.js — the visual "sketch" that plays during the show.
+// Two stick figures walk toward each other, meet in the middle, and dance
+// for as long as the music is running. On the outro they fade out together.
+
 export class Scene {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    // Two stick‑figure characters
-    this.charA = { x: 80, y: 200, color: '#ff6', angle: 0, dancing: false };
-    this.charB = { x: 320, y: 200, color: '#6ff', angle: 0, dancing: false };
-    // Simple particle system for beat‑driven sparks
-    this.particles = [];
-    this.fade = 1; // canvas opacity for outro
+    this.ctx    = canvas.getContext('2d');
+
+    // start them on opposite sides — left one is yellow-ish, right one cyan-ish
+    this.charA = { x: 80,  y: 0, color: '#ffdd55', angle: 0, dancing: false };
+    this.charB = { x: -80, y: 0, color: '#55ffee', angle: 0, dancing: false };
+
+    // sparks that pop out on a strong beat
+    this.sparks = [];
+
+    // 1 = fully visible, decays to 0 at the outro
+    this.fade = 1;
   }
 
-  // audio may be null (idle) – we use bass amplitude as the beat value (0‑1)
+  // called every frame — audio can be null during the idle/intro phase
   update(audio) {
-    const beat = audio?.bass ?? 0;
-    const speed = 2 + beat * 30; // faster when the beat is strong
+    const beat  = audio?.bass ?? 0;
+    const mid   = audio?.mid  ?? 0;
+    // base walk speed plus a kick on strong beats
+    const speed = 1.2 + beat * 18;
 
-    // Move characters toward the centre until they meet
-    if (!this.charA.dancing && !this.charB.dancing) {
-      const targetX = this.canvas.width / 2;
-      const targetY = this.canvas.height / 2;
-      this.charA.x += (targetX - this.charA.x) * 0.02 * speed;
-      this.charA.y += (targetY - this.charA.y) * 0.02 * speed;
-      this.charB.x += (targetX - this.charB.x) * 0.02 * speed;
-      this.charB.y += (targetY - this.charB.y) * 0.02 * speed;
+    const cx = this.canvas.width  / 2;
+    const cy = this.canvas.height / 2;
 
-      // when they get close start dancing
+    if (!this.charA.dancing) {
+      // walk toward each other — charA from the left, charB from the right
+      this.charA.x += (cx - this.charA.x) * 0.015 * speed;
+      this.charA.y += (cy - this.charA.y) * 0.015 * speed;
+      this.charB.x += (cx - this.charB.x) * 0.015 * speed;
+      this.charB.y += (cy - this.charB.y) * 0.015 * speed;
+
       const dx = this.charA.x - this.charB.x;
       const dy = this.charA.y - this.charB.y;
-      if (Math.hypot(dx, dy) < 30) {
+      if (Math.hypot(dx, dy) < 36) {
         this.charA.dancing = true;
         this.charB.dancing = true;
       }
+    } else {
+      // when dancing, orbit slightly around the centre point
+      const t = performance.now() / 1000;
+      const orbitR = 22 + mid * 15;
+      this.charA.x = cx + Math.cos(t * 1.4) * orbitR;
+      this.charA.y = cy + Math.sin(t * 1.4) * orbitR * 0.5;
+      this.charB.x = cx - Math.cos(t * 1.4) * orbitR;
+      this.charB.y = cy - Math.sin(t * 1.4) * orbitR * 0.5;
     }
 
-    // Spawn a few spark particles on strong beats
-    if (beat > 0.5) {
-      for (let i = 0; i < 3; i++) {
-        this.particles.push({
-          x: (this.charA.x + this.charB.x) / 2,
-          y: (this.charA.y + this.charB.y) / 2,
-          vx: (Math.random() - 0.5) * 3,
-          vy: (Math.random() - 0.5) * 3,
-          life: 30,
-          color: `hsl(${Math.random() * 360}, 80%, 60%)`
+    // pop a few sparks when the kick hits
+    if (beat > 0.45) {
+      for (let i = 0; i < 4; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 1.5 + Math.random() * 3;
+        this.sparks.push({
+          x:    (this.charA.x + this.charB.x) / 2,
+          y:    (this.charA.y + this.charB.y) / 2,
+          vx:   Math.cos(ang) * spd,
+          vy:   Math.sin(ang) * spd,
+          life: 1,            // 1 → 0
+          hue:  Math.random() * 60 + 30,  // warm yellows and oranges
         });
       }
     }
 
-    // Update particles
-    this.particles = this.particles.filter(p => {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.life--;
-      return p.life > 0;
+    // age sparks
+    this.sparks = this.sparks.filter(s => {
+      s.x    += s.vx;
+      s.y    += s.vy;
+      s.vy   += 0.08;         // gravity
+      s.life -= 0.04;
+      return s.life > 0;
     });
 
-    // fade out during outro
-    if (window.phase === 'outro') this.fade *= 0.96;
-    this._draw(beat);
+    // fade during outro
+    if (window.phase === 'outro') this.fade = Math.max(0, this.fade - 0.012);
+
+    this._draw(beat, mid);
   }
 
-  _draw(beat) {
+  _draw(beat, mid) {
     const ctx = this.ctx;
-    const { width, height } = this.canvas;
-    ctx.clearRect(0, 0, width, height);
+    const W   = this.canvas.width;
+    const H   = this.canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
     ctx.globalAlpha = this.fade;
 
-    // Background: vertical gradient that subtly shifts with the beat
-    const grad = ctx.createLinearGradient(0, 0, 0, height);
-    const base = 200;
-    const offset = beat * 30;
-    grad.addColorStop(0, `rgb(${base + offset}, ${base - offset}, 30)`);
-    grad.addColorStop(1, `rgb(10, 10, ${30 + offset})`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
+    // deep background — shifts slightly with the bass
+    const dark = Math.floor(10 + beat * 20);
+    ctx.fillStyle = `rgb(${dark}, ${dark}, ${Math.floor(dark * 1.4)})`;
+    ctx.fillRect(0, 0, W, H);
 
-    // Helper to draw a simple stick figure
-    const drawFigure = (char) => {
-      const { x, y, color, angle, dancing } = char;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle);
-
-      // Head
-      const headR = 12;
-      ctx.fillStyle = color;
+    // draw sparks underneath the figures
+    for (const s of this.sparks) {
+      ctx.globalAlpha = this.fade * s.life;
+      ctx.fillStyle   = `hsl(${s.hue}, 90%, 65%)`;
       ctx.beginPath();
-      ctx.arc(0, -headR - 20, headR, 0, Math.PI * 2);
+      ctx.arc(s.x, s.y, 2.5, 0, Math.PI * 2);
       ctx.fill();
-
-      // Body
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(0, -20);
-      ctx.lineTo(0, 30);
-      ctx.stroke();
-
-      // Arms – swing with the beat when dancing, otherwise stay down
-      const armSwing = dancing ? Math.sin(beat * Math.PI * 2) * 0.6 : 0;
-      ctx.save();
-      ctx.translate(0, -10);
-      ctx.rotate(armSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-15, 0);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.save();
-      ctx.translate(0, -10);
-      ctx.rotate(-armSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(15, 0);
-      ctx.stroke();
-      ctx.restore();
-
-      // Legs – opposite phase swing for a dancing effect
-      const legSwing = dancing ? Math.sin(beat * Math.PI * 2 + Math.PI) * 0.4 : 0;
-      ctx.save();
-      ctx.translate(0, 30);
-      ctx.rotate(legSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-10, 15);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.save();
-      ctx.translate(0, 30);
-      ctx.rotate(-legSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(10, 15);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.restore();
-    };
-
-    // Draw particles (tiny sparks)
-    this.particles.forEach(p => {
-      ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    drawFigure(this.charA);
-    drawFigure(this.charB);
-  }
-}
-
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    // Two stick‑figure characters
-    this.charA = { x: 80, y: 200, color: '#ff6', angle: 0, dancing: false };
-    this.charB = { x: 320, y: 200, color: '#6ff', angle: 0, dancing: false };
-    this.fade = 1; // canvas opacity for outro
-  }
-
-  // audio may be null (idle) – we use bass amplitude as the beat value (0‑1)
-  update(audio) {
-    const beat = audio?.bass ?? 0;
-    const speed = 2 + beat * 30; // faster when the beat is strong
-
-    // Move characters toward the centre until they meet
-    if (!this.charA.dancing && !this.charB.dancing) {
-      const targetX = this.canvas.width / 2;
-      const targetY = this.canvas.height / 2;
-      this.charA.x += (targetX - this.charA.x) * 0.02 * speed;
-      this.charA.y += (targetY - this.charA.y) * 0.02 * speed;
-      this.charB.x += (targetX - this.charB.x) * 0.02 * speed;
-      this.charB.y += (targetY - this.charB.y) * 0.02 * speed;
-
-      // when they get close start dancing
-      const dx = this.charA.x - this.charB.x;
-      const dy = this.charA.y - this.charB.y;
-      if (Math.hypot(dx, dy) < 30) {
-        this.charA.dancing = true;
-        this.charB.dancing = true;
-      }
     }
-    // fade out during outro
-    if (window.phase === 'outro') this.fade *= 0.96;
-    this._draw(beat);
-  }
-
-  _draw(beat) {
-    const ctx = this.ctx;
-    const { width, height } = this.canvas;
-    ctx.clearRect(0, 0, width, height);
     ctx.globalAlpha = this.fade;
 
-    // Helper to draw a simple stick figure
-    const drawFigure = (char) => {
-      const { x, y, color, angle, dancing } = char;
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle);
+    this._figure(this.charA, beat, mid);
+    this._figure(this.charB, beat, mid);
+  }
 
-      // Head
-      const headR = 12;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(0, -headR - 20, headR, 0, Math.PI * 2);
-      ctx.fill();
+  // draw one stick figure — arms and legs swing when dancing
+  _figure(char, beat, mid) {
+    const ctx     = this.ctx;
+    const { x, y, color, dancing } = char;
 
-      // Body
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(0, -20);
-      ctx.lineTo(0, 30);
-      ctx.stroke();
+    // how much limbs swing — zero while walking, beat-driven while dancing
+    const swing   = dancing ? Math.sin(performance.now() / 180) * (0.5 + beat * 0.4) : 0;
+    const legSwing = dancing ? -swing * 0.7 : 0;
 
-      // Arms – swing with the beat when dancing, otherwise stay down
-      const armSwing = dancing ? Math.sin(beat * Math.PI * 2) * 0.6 : 0;
-      ctx.save();
-      ctx.translate(0, -10);
-      ctx.rotate(armSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-15, 0);
-      ctx.stroke();
-      ctx.restore();
+    ctx.save();
+    ctx.translate(x, y);
 
-      ctx.save();
-      ctx.translate(0, -10);
-      ctx.rotate(-armSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(15, 0);
-      ctx.stroke();
-      ctx.restore();
+    // head
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 8 + beat * 14;
+    ctx.beginPath();
+    ctx.arc(0, -44, 10, 0, Math.PI * 2);
+    ctx.fill();
 
-      // Legs – opposite phase swing for a dancing effect
-      const legSwing = dancing ? Math.sin(beat * Math.PI * 2 + Math.PI) * 0.4 : 0;
-      ctx.save();
-      ctx.translate(0, 30);
-      ctx.rotate(legSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-10, 15);
-      ctx.stroke();
-      ctx.restore();
+    // body
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 3.5;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, -32);
+    ctx.lineTo(0, 10);
+    ctx.stroke();
 
-      ctx.save();
-      ctx.translate(0, 30);
-      ctx.rotate(-legSwing);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(10, 15);
-      ctx.stroke();
-      ctx.restore();
+    // left arm
+    ctx.save();
+    ctx.translate(0, -22);
+    ctx.rotate(-0.3 + swing);
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(-16, 10);
+    ctx.stroke();
+    ctx.restore();
 
-      ctx.restore();
-    };
+    // right arm
+    ctx.save();
+    ctx.translate(0, -22);
+    ctx.rotate(0.3 - swing);
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(16, 10);
+    ctx.stroke();
+    ctx.restore();
 
-    drawFigure(this.charA);
-    drawFigure(this.charB);
+    // left leg
+    ctx.save();
+    ctx.translate(0, 10);
+    ctx.rotate(legSwing);
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(-10, 22);
+    ctx.stroke();
+    ctx.restore();
+
+    // right leg
+    ctx.save();
+    ctx.translate(0, 10);
+    ctx.rotate(-legSwing);
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(10, 22);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
   }
 }
